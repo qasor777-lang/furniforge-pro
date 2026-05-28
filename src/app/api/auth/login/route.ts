@@ -22,49 +22,54 @@ async function notify(args: { username: string; fullName?: string; role?: string
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const username = String(body.username || "").trim().toLowerCase();
-  const password = String(body.password || "");
-  const ip = getClientIp(req);
-  const userAgent = req.headers.get("user-agent") || "";
+  try {
+    const body = await req.json();
+    const username = String(body.username || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const ip = getClientIp(req);
+    const userAgent = req.headers.get("user-agent") || "";
 
-  if (!username || !password) {
-    return NextResponse.json({ error: "username and password required" }, { status: 400 });
+    if (!username || !password) {
+      return NextResponse.json({ error: "username and password required" }, { status: 400 });
+    }
+
+    const user = await db.user.findUnique({ where: { username } });
+    if (!user || !user.isActive) {
+      await db.loginLog.create({ data: { username, success: false, ip, userAgent } }).catch(() => {});
+      notify({ username, success: false, ip, userAgent });
+      return NextResponse.json({ error: "Login yoki parol noto'g'ri" }, { status: 401 });
+    }
+
+    const ok = await verifyPassword(password, user.passwordHash);
+    if (!ok) {
+      await db.loginLog.create({ data: { username, success: false, ip, userAgent } }).catch(() => {});
+      notify({ username, fullName: user.fullName, success: false, ip, userAgent });
+      return NextResponse.json({ error: "Login yoki parol noto'g'ri" }, { status: 401 });
+    }
+
+    await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    await db.loginLog.create({ data: { username, success: true, ip, userAgent } }).catch(() => {});
+
+    await createSession({
+      uid: user.id,
+      username: user.username,
+      role: user.role as any,
+      fullName: user.fullName,
+    });
+
+    notify({
+      username: user.username,
+      fullName: user.fullName,
+      role: user.role,
+      success: true,
+      ip, userAgent,
+    });
+
+    return NextResponse.json({
+      user: { id: user.id, username: user.username, role: user.role, fullName: user.fullName },
+    });
+  } catch (e: any) {
+    console.error("Login error:", e);
+    return NextResponse.json({ error: "Server xatosi: " + e.message }, { status: 500 });
   }
-
-  const user = await db.user.findUnique({ where: { username } });
-  if (!user || !user.isActive) {
-    await db.loginLog.create({ data: { username, success: false, ip, userAgent } }).catch(() => {});
-    notify({ username, success: false, ip, userAgent });
-    return NextResponse.json({ error: "Login yoki parol noto'g'ri" }, { status: 401 });
-  }
-
-  const ok = await verifyPassword(password, user.passwordHash);
-  if (!ok) {
-    await db.loginLog.create({ data: { username, success: false, ip, userAgent } }).catch(() => {});
-    notify({ username, fullName: user.fullName, success: false, ip, userAgent });
-    return NextResponse.json({ error: "Login yoki parol noto'g'ri" }, { status: 401 });
-  }
-
-  await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  await db.loginLog.create({ data: { username, success: true, ip, userAgent } }).catch(() => {});
-
-  await createSession({
-    uid: user.id,
-    username: user.username,
-    role: user.role as any,
-    fullName: user.fullName,
-  });
-
-  notify({
-    username: user.username,
-    fullName: user.fullName,
-    role: user.role,
-    success: true,
-    ip, userAgent,
-  });
-
-  return NextResponse.json({
-    user: { id: user.id, username: user.username, role: user.role, fullName: user.fullName },
-  });
 }
