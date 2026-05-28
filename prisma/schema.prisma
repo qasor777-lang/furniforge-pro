@@ -1,0 +1,226 @@
+// FurniForge Pro — PostgreSQL schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model FurnitureCategory {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  path        String   // ltree-style: "furniture.kitchen.base"
+  nameUz      String
+  nameRu      String?
+  nameEn      String?
+  styleTags   String   // JSON array
+  roomTypes   String   // JSON array
+  models      FurnitureModel[]
+  createdAt   DateTime @default(now())
+}
+
+model Material {
+  id           Int     @id @default(autoincrement())
+  code         String  @unique
+  type         String  // LDSP, MDF, glass, metal
+  vendor       String?
+  decor        String?
+  colorHex     String?
+  textureUrl   String?
+  sheetW       Float   // mm
+  sheetH       Float
+  thickness    Float
+  hasGrain     Boolean @default(false)
+  costPerM2    Float   @default(0)
+  stockM2      Float   @default(0)
+  parts        AtomicPart[]
+}
+
+model FurnitureModel {
+  id            Int     @id @default(autoincrement())
+  uuid          String  @unique @default(uuid())
+  categoryId    Int
+  category      FurnitureCategory @relation(fields: [categoryId], references: [id])
+  sku           String  @unique
+  nameUz        String
+  description   String?
+  paramSchema   String  // JSON: { width:{min,max,step,default}, ... }
+  defaultParams String  // JSON
+  geometryDsl   String  // JSON CSG program
+  thumbnailUrl  String?
+  styleTags     String  // JSON array
+  // Room compatibility — JSON: { kitchen:0.95, bedroom:0.10 }
+  roomCompat    String  @default("{}")
+  bboxW         Float   // default footprint
+  bboxD         Float
+  bboxH         Float
+  source        String  @default("manual") // manual|ai_generated|scraped
+  baseCostUzs   Int     @default(0)
+  status        String  @default("published")
+  modules       Module[]
+  createdAt     DateTime @default(now())
+}
+
+model Module {
+  id          Int    @id @default(autoincrement())
+  modelId     Int
+  model       FurnitureModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  code        String
+  role        String // carcass|door|drawer|shelf
+  transform   String // JSON
+  parts       AtomicPart[]
+}
+
+model AtomicPart {
+  id           Int     @id @default(autoincrement())
+  moduleId     Int
+  module       Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  code         String
+  lengthExpr   String  // formula: "W - 2*T"
+  widthExpr    String
+  thickness    Float
+  materialId   Int
+  material     Material @relation(fields: [materialId], references: [id])
+  grain        String  @default("none") // X|Y|none
+  edgeTop      String?
+  edgeBottom   String?
+  edgeLeft     String?
+  edgeRight    String?
+  qtyExpr      String  @default("1")
+}
+
+model RoomAnalysis {
+  id              Int     @id @default(autoincrement())
+  uuid            String  @unique @default(uuid())
+  imageUrl        String
+  roomType        String  // kitchen|bedroom|...
+  roomTypeConf    Float   @default(0)
+  estimatedW      Float?  // mm
+  estimatedD      Float?
+  estimatedH      Float?
+  styleLabel      String?
+  styleTags       String  @default("[]") // JSON
+  palette         String  @default("[]") // JSON [{hex, weight}]
+  lighting        String  @default("{}") // JSON
+  freeSpace       String  @default("[]") // JSON polygons
+  detectedObjects String  @default("[]")
+  rawVision       String  @default("{}")
+  modelsUsed      String  @default("{}")
+  latencyMs       Int     @default(0)
+  recommendations RoomRecommendation[]
+  createdAt       DateTime @default(now())
+}
+
+model RoomRecommendation {
+  id              Int    @id @default(autoincrement())
+  roomAnalysisId  Int
+  room            RoomAnalysis @relation(fields: [roomAnalysisId], references: [id], onDelete: Cascade)
+  modelId         Int
+  score           Float
+  adaptedParams   String // JSON
+  reason          String // explanation text
+  rank            Int
+}
+
+model AiImportedDesign {
+  id              Int    @id @default(autoincrement())
+  sourcePlatform  String
+  sourceUrl       String
+  rawImageUrl     String
+  visionOutput    String @default("{}")
+  parametricJson  String @default("{}")
+  styleTags       String @default("[]")
+  confidence      Float  @default(0)
+  status          String @default("queued") // queued|parsed|published|rejected
+  promotedModelId Int?
+  createdAt       DateTime @default(now())
+}
+
+model AppSetting {
+  key       String   @id
+  value     String   @default("")
+  updatedAt DateTime @updatedAt
+}
+
+model LoginLog {
+  id          Int      @id @default(autoincrement())
+  username    String
+  success     Boolean
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  uuid         String   @unique @default(uuid())
+  username     String   @unique
+  fullName     String
+  passwordHash String
+  role         String   @default("designer") // admin | manager | designer
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  createdBy    Int?
+}
+
+model Hardware {
+  id           Int    @id @default(autoincrement())
+  code         String @unique
+  type         String // hinge, slide, handle, knob, pin, screw, leg, gas_lift
+  vendor       String?
+  model        String?
+  description  String
+  unitPriceUzs Int    @default(0)
+  imageUrl     String?
+  specs        String @default("{}") // JSON
+  stockQty     Int    @default(0)
+}
+
+model PricingProfile {
+  id              Int     @id @default(autoincrement())
+  code            String  @unique
+  name            String
+  laborPerPartUzs Int     @default(0)      // CNC + edging labor per part
+  marginPercent   Float   @default(0.30)   // 30% default
+  vatPercent      Float   @default(0.12)   // 12% UZ VAT
+  edgingPerMUzs   Int     @default(8000)   // edge tape work cost per linear meter
+  deliveryUzs     Int     @default(0)
+  installUzs      Int     @default(0)
+  isDefault       Boolean @default(false)
+}
+
+model Project {
+  id            Int     @id @default(autoincrement())
+  uuid          String  @unique @default(uuid())
+  name          String
+  roomAnalysisId Int?
+  layoutJson    String  @default("[]") // placed furniture instances
+  roomW         Int     @default(4000)
+  roomD         Int     @default(5000)
+  roomH         Int     @default(2700)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Curated full-room furniture bundle (kompleks)
+model RoomSet {
+  id            Int     @id @default(autoincrement())
+  uuid          String  @unique @default(uuid())
+  code          String  @unique
+  nameUz        String
+  description   String?
+  roomType      String  // kitchen|bedroom|living|office|child|hallway|dining
+  styleTags     String  @default("[]") // JSON array
+  thumbnailUrl  String?
+  // Recommended room footprint (mm)
+  minRoomW      Int     @default(2500)
+  minRoomD      Int     @default(3000)
+  totalCostUzs  Int     @default(0)
+  // JSON array of items: [{ sku, params:{}, position:[x,y,z], rotationY, bodyColor, frontColor }]
+  itemsJson     String  @default("[]")
+  isFeatured    Boolean @default(false)
+  createdAt     DateTime @default(now())
+}
