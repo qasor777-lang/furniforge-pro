@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "npx prisma migrate deploy && npx tsx prisma/seed.ts && npx tsx scripts/create-admin.ts && next start",
     "lint": "next lint",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
@@ -23,11 +23,13 @@
     "lucide-react": "^0.460.0",
     "next": "14.2.18",
     "openai": "^4.73.0",
+    "prisma": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.4",
     "three": "^0.170.0",
+    "tsx": "^4.19.2",
     "zod": "^3.25.76",
     "zustand": "^5.0.1"
   },
@@ -42,9 +44,7 @@
     "autoprefixer": "^10.4.20",
     "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
-    "prisma": "^5.22.0",
     "tailwindcss": "^3.4.15",
-    "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^4.1.7"
   }
